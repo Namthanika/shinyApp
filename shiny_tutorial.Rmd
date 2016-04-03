@@ -320,6 +320,6 @@ shinyApp(ui = ui, server = server)
 ```
 Awesome, yet simple. If you create an acount at [shinyapps.io](http://www.shinyapps.io/), you can connect RStudio with it and publish your app right away on a shiny server. If you embed it the right way into your website ( and if it doesn't contain a not responsive, big image like my first app on my [blog](http://datentaeter.de/2016/03/11/meine-erste-app-mit-shiny/) ) your shiny app will be fully responsive. If you have a look at this tutorial with your phone, you'll see that shiny's responsive design isn't perfect yet.
 
-#If you coded your very first app with this tutorial or after reading this tutorial, let us know! We would love to see your work and creativity with the shiny application framework!
+###If you coded your very first app with this tutorial or after reading this tutorial, let us know! We would love to see your work and creativity with the shiny application framework!
 
-#If you have any questions, problems or feedback, simply leave a comment, email us or join our slack team to talk to us any time!
+###If you have any questions, problems or feedback, simply leave a comment, email us or join our slack team to talk to us any time!
