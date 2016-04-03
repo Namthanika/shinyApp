@@ -1,0 +1,237 @@
+---
+title: "A simple web app with shiny"
+author: "Marie-Louise Timcke"
+date: "28. März 2016"
+output: html_document
+---
+This is an R Markdown file containing the code for this web app on Germany's air pollutants emissions. If you're new to R: Don't panic! This may look complicated at first (not only because the code is squeezed to be a little bit more readable in the small space we have for the iframe on our website), but all it takes to understand this are our tutorials regarding:
+[shiny](http://journocode.com/2016/03/27/r-your-first-web-application-with-shiny/), [ggplot2](http://journocode.com/2016/03/02/r-the-ggplot2-package/) and [tidy data](http://journocode.com/2016/03/05/r-tidy-data/)!
+
+Visit us on [GitHub](https://github.com/journocode/shinyApp) to find a markdown, the data and the raw code of this app.
+
+**Code**
+
+Load required packages
+```{r}
+library(shiny) 
+library(readxl) # to load the data into R
+library(tidyr) # to restructure the data
+library(ggplot2) # for the barchart
+library(dplyr) # to group and filter the data
+```
+
+Read the Excel-file and melt it. The vector *pollutantsorder* will help us to sort the select options in the app the way we want.
+Don't forget to set the working directory correctly!
+```{r}
+emissions <- read_excel("TotalEmissionsGermanyInKT.xlsx")
+
+emissions_restructed <- emissions %>% 
+  tidyr::gather(key = "year", value = "emissions", 2:10)
+
+pollutantsorder <- c("TSP", "SO2", "PM 2.5", "PM 10", 
+                     "NOx", "NMVOCs", "NH3", "CO")
+```
+
+Build the user interface
+```{r}
+ui <- shinyUI(
+ fluidPage(
+    # header panel
+ fluidRow(column(width = 10, style = "font-size: 25pt; 
+                                     line-height: 40pt; 
+                                     width = 100",
+              tags$strong("Germanys air 
+                          pollutants emissions")), 
+       column(width = 2,
+             tags$head(tags$img(src='http://journocode.
+                                com/wordpress/wp-content
+                                /uploads/2016/
+                                01/small-logo.png', 
+                                align = "left", 
+                                width= "100")))
+          ),
+# sidebar with user input options
+sidebarPanel(style = "background-color: #78d9c9;",
+              tags$style(type='text/css', 
+                         ".selectize-input { 
+                         font-size: 12pt; 
+                         line-height: 13pt;} 
+                         .selectize-dropdown {
+                         font-size: 12pt; 
+                         line-height: 13pt;}"),
+              width = 3,
+              # checkbox for pollutants
+              checkboxGroupInput("pollutants",
+                                 label = HTML(
+                                 '<p style="color:
+                                 white; 
+                                 font-size:12pt">
+                                 Pollutants</p>'), 
+              choices = pollutantsorder, 
+              selected = pollutantsorder),
+              # select option for years
+              selectInput("year",
+                         label = HTML(
+                         '<p style="color:white; 
+                         font-size: 12pt"> Year </p>'), 
+                         choices = unique(
+                         emissions_restructed$year), 
+                         multiple = TRUE, 
+                         selected = c(2005:2013)),
+              # text with additional information
+              helpText(
+                       HTML('<p style="color:white; 
+                           font-size: 9pt">choose air 
+                           pollutants by clicking 
+                           the check boxes,
+                           exclude years with a 
+                           click and the 
+                           backspace key</p>'))
+              ),
+# main panel with output in different tabs
+mainPanel(tabsetPanel(type = "tabs", 
+                     # tab with plot output
+                      tabPanel("Graphic",
+                               plotOutput("mplot"), 
+                               style = "width:100%"), 
+                      # tab with data output
+                      tabPanel("Data",
+                               htmlOutput("text"), 
+                               tableOutput("table"), 
+                               style = "font-size:70%",
+                               htmlOutput(
+                               "datasource")),
+                      # tab with this R Markdown file
+                      tabPanel("Code",
+                      includeMarkdown(
+                      "emissions_app.Rmd"))
+    )
+    )
+  ))
+```
+
+Build the server part
+```{r}
+server <- shinyServer(function(input, output) {
+data <- reactive({ # reactive part = thos code is repeated when user input changes
+    
+ validate( # define error messages if user doesn't choose anything
+  need(input$pollutants != "", 
+        "Please select at least one air polutant"),
+  need(input$year != "", 
+       "Please select at least one year")
+)
+    
+  # filter data according to user input
+  plotdata <- emissions_restructed  %>%
+    as.data.frame() %>%
+    filter(
+      pollutants %in% input$pollutants 
+      & year %in% input$year)
+   
+  # define reactive scale for y-axis
+  scalecalc <- plotdata %>%
+    group_by(year) %>%
+    summarize(value = sum(emissions))
+    
+  scalemax <- max(scalecalc$value)
+  scalesteps <- round(scalemax/5, digits = -1)
+    
+  list(plotdata = plotdata,
+       scalemax = scalemax,
+       scalesteps = scalesteps
+       )
+})
+# build plot output with ggplot2
+output$mplot <- renderPlot({
+  myplot <- ggplot(data = data()$plotdata, 
+                   aes(as.factor(year), y = emissions, 
+                       fill = factor(pollutants), 
+                       order = pollutants)) + 
+  geom_bar(stat = "identity") + 
+  xlab("Year") + 
+  ylab("Emissions in kt") +
+  theme_minimal()+
+  ggtitle("Barchart of air pollutants emissions\n") +
+  guides(fill=guide_legend(title="pollutants", 
+                            reverse = T))+
+  scale_y_continuous(breaks = 
+                     seq(0,data()$scalemax,   
+                         data()$scalesteps),
+                     labels = abs(seq(0,
+                                  data()$scalemax,
+                                  data()$scalesteps))) +
+  theme(plot.title = 
+          element_text(family="Arial", 
+                       face="bold", 
+                       size=18),
+        axis.text.x = 
+          element_text(angle = 0, 
+                       family="Arial", 
+                       size=13),                 
+        axis.text.y = 
+          element_text(angle = 0, 
+                       family="Arial", 
+                       size=13),
+        axis.title.x = 
+          element_text(size=14, 
+                       face="bold", 
+                       vjust = -1),
+        axis.title.y = 
+          element_text(size=14, 
+                       face="bold", 
+                       vjust = 2)
+          ) +
+  scale_fill_manual(values = c("TSP" = "#ffc7e4", 
+                                "SO2" = "#ffb155", 
+                                "PM 2.5" = "#ff6f69", 
+                                "PM 10" = "#b1e6e6", 
+                                "NOx" = "#77b1d5", 
+                                "NMVOCs" = "#c0b7db", 
+                                "NH3" = "#fcffaf", 
+                                "CO" = "#78d9c9"), 
+                                drop = F)
+    
+print(myplot)
+})
+# build table output
+output$table <- renderTable({
+  emissions_restructed %>%
+  filter(pollutants %in% input$pollutants & 
+         year %in% input$year) %>%
+  spread(year, emissions) # spread() = opposite of gather() 
+})
+# build text output for table source
+output$datasource <- renderUI({
+  tags$div(
+     tags$strong("Source:"), 
+     tags$a("Umweltbundesamt", 
+            href="http://www.umweltbundesamt.de/
+                  daten/luftbelastung/
+                  luftschadstoff-emissionen-
+                  in-deutschland")
+  )       
+})  
+# text output for data description
+output$text <- renderUI({
+  tags$div(
+    HTML('<p style="color:black; font-size: 9pt">
+         This data on Germanys air pollutants 
+         emissions was downloaded from the german
+         Federal Environment Agencys website. The 
+         table provides information on nitrogen oxides 
+         (NOx), ammonia (NH3), volatile organic compounds            
+         without methane (NMVOC), sulfur dioxide (SO2) 
+         and dust - including the fine dust fractions 
+         PM 10 and PM 2.5 - and carbon monoxide (CO).</p>')
+    )   
+  })
+})
+```
+
+Run the app
+```{r}
+shinyApp(ui = ui, server = server)
+```
+
+

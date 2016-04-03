@@ -1,0 +1,325 @@
+---
+title: "shiny_app"
+author: "Marie-Louise Timcke"
+date: "29. März 2016"
+output: html_document
+---
+
+#R: Your first web application with shiny
+
+Data driven journalism doesn't necessarily involve user interaction. The analysis and its results may be enough to write a dashing article without ever mentioning a number. But let's face it: We love to interact with data visualizations! To build those, some basic knowledge of JavaScript and HTML is usually required.
+What? Your only coding skills are a bit of R? No problemo! What if I told you there was a way to interactively show users your most interesting R-results in a fancy web app?
+
+##Shiny to the rescue
+
+Shiny is a highly customizable web application framework that turns your analysis into an interactive web app. No HTML, no JavaScript, no CSS required — although you can use it to expand your app. Also, the layout is responsive (although it's not perfect for every phone).
+
+In this tutorial, we will learn step by step how to code the shiny app on Germany's air pollutants emissions.
+
+As always, you'll find the raw code of the app, the data and a markdown in our [GitHub repository](https://github.com/journocode/shinyApp). Visit the [shiny gallery](http://shiny.rstudio.com/gallery/) to explore the other diverse examples of shiny apps out there!
+
+The app has a header panel with a title and an image, a sidebar panel with two different types of input select options and a main panel split into three different tabs containing a barchart, the data table and also an R markdown document. You can choose multiple air pollutants as well as years and see how the graph and the data table change according to your input. The app is coded entirely in R and at the moment deployed on the free shinyapps.io server. This is why it may be a little bit slow or partly not accessible. You can deploy your app on your own, faster server, too (or pay for a faster shinyapps.io option).
+
+Before starting to code the app, you might want to have a look at our tutorial on the graphic package [ggplot2](http://journocode.com/2016/03/02/r-the-ggplot2-package/) and our guide to [tidy data](http://journocode.com/2016/03/05/r-tidy-data/), since we will use some of the functions and principles for it. If you're already familiar with ggplot2, [tidyr](https://cran.r-project.org/web/packages/tidyr/index.html) and [dplyr](https://cran.r-project.org/web/packages/dplyr/index.html): Perfect, let's go!
+
+##Preparations
+
+For those of you who are completley new to shiny, we'll start with a draft script in RStudio. Here we will install the packages, since the install.packages() function doesn't work well with a shiny app script. A shiny app loads packages but will give an error when asked to install them.
+
+### In the draft script
+```{r in the console/draft-script 1}
+# readxl to load the data
+if(!require(readxl)) {
+devtools::install_github("hadley/readxl")
+require(readxl)
+}
+# tidyr to tidy the data
+if(!require(tidyr)) {
+install.packages("tidyr", repos="http://cran.us.r-project.org")
+require(tidyr)
+}
+# dplyr to filter and group the data
+if(!require(dplyr)) {
+install.packages("dplyr", repos="http://cran.us.r-project.org")
+require(dplyr)
+}
+# ggplot2 for the plot
+if(!require(ggplot2)) {
+install.packages("ggplot2", repos="http://cran.us.r-project.org")
+require(ggplot2)
+}
+# shiny to build the app
+if(!require(shiny)) {
+install.packages("shiny", repos="http://cran.us.r-project.org")
+require(shiny)
+}
+```
+
+Now download the emission data and the markdown file emissions_app.Rmd from the shiny repository on our GitHub page. Save them in a directory and name it shiny_app. In the draft R script, set the working directory to this directory and read in the excel file.
+```{r in the console/draft-script 2}
+#setwd("/Users/MarieLou/Journocoding/<journocode>/shiny_app")
+
+# load data
+emissions <- read_excel("TotalEmissionsGermanyInKT.xlsx")
+
+# have a look at the data
+View(emissions)
+```
+
+If you know the tidy, molten data format, you'll see right away that this data isn't tidy yet. Let's restructure it with tidyr's gather() function.
+```{r in the console/draft-script 3}
+# tidy data
+emissions_restructed <- emissions %>% 
+  tidyr::gather(key = "year", value = "emissions", 2:10)
+
+View(emissions_restructed)
+```
+
+Much better! Now, still in the draft script, let's build a stacked bar chart with ggplot2, showing the emissions for every air pollutant and every year in our data. We don't have to do this but we can optimize the plot now and paste it into the app later.
+```{r in the console/draft-script 4}
+# set order for appearance of the pollutants with a vector called "pollutantsorder" (R likes sorting alphabetically and we won't want that this time)
+pollutantsorder <- c("TSP", "SO2", "PM 2.5", "PM 10", "NOx", "NMVOCs", "NH3", "CO")
+
+# build a ggplot2 stacked barchart
+    myplot <- ggplot(data = emissions_restructed, aes(as.factor(year), y = emissions, fill = factor(pollutants), order = pollutants)) + 
+      geom_bar(stat = "identity") + 
+      xlab("Year") + 
+      ylab("Emissions in kt") +
+      theme_minimal() +
+      ggtitle("Barchart of air pollutants emissions\n") +
+      guides(fill=guide_legend(title="pollutants", reverse = T)) + 
+      theme(plot.title=element_text(family="Arial", face="bold", size=18), # style inscribing
+            axis.text.x = element_text(angle = 0, family="Arial", size=13), 
+            axis.text.y = element_text(angle = 0, family="Arial", size=13),
+            axis.title.x = element_text(size=14, face="bold", vjust = -1),
+            axis.title.y = element_text(size=14, face="bold", vjust = 2)
+      )
+
+    # print the plot    
+    print(myplot)
+```
+
+This plot should now look almost exactly as the interactive plot in the app. To spread our molten data again so it looks like the table in the app's table tab, we'll use the spread-function of tidyr. It basically does the opposite of gather() and we use it because we want the table to display the same input that's given to the plot but in the spreaded format.
+```{r in the console/draft-script 5}
+table <- emissions_restructed %>%
+         spread(year, emissions)
+View(table)  
+```
+Awww yeah, the backbone of our app content is ready. Let's get right to the application!
+
+
+Building the app
+
+A shiny app script basically consists of four parts:
+1. preps   The part where required packages and the data are loaded.
+2. ui   The user interface is the structuring part of the app. Here the app gets it's design and divisions.
+3. server   Here the app gets it's content like a plot output etc.
+4. shinyApp   This is where the magic happens! With a short command the user interface and the server part are merged to become an awesome shiny app.
+First things first: preps = preparations
+Open a new R script and only library the packages we installed in the draft.
+```{r the app.R-file 1}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(readxl)
+library(tidyr)
+```
+Next thing is just copy/paste: We simply copy over the draft part where we read in the data and structured it. As soon as you save the script as app.R, RStudio will recognize it as a shiny app and the Run button will magically become a Run App button.
+```{r the app.R-file 2}
+# load data
+emissions <- read_excel("TotalEmissionsGermanyInKT.xlsx")
+# tidy data
+emissions_restructed <- emissions %>% 
+  tidyr::gather(key = "year", value = "emissions", 2:10)
+
+# set order for appearance of the pollutants with a vector called "pollutantsorder" (R likes sorting alphabetically and we won't want that this time)
+pollutantsorder <- c("TSP", "SO2", "PM 2.5", "PM 10", "NOx", "NMVOCs", "NH3", "CO")
+```
+
+
+##ui = user interface
+There are multiple ways to structure your app. We'll choose a simple design with three panels.
+All panels are defined within the shinyUI() function and the fluidPage() function. fluidPage() is a design function for creating fluid pages that scale their components in real time to fit the width of the browser. In short: It makes pages responsive.
+
+###The header panel
+Like with the whole app, you even have some options to style and divide the panels. Instead of using shiny's headerPanel() function, we will use the fluidRow() function to divide the header panel into two columns: One with width 10 for the title and one with width 2 for the image. Note that no matter how many columns you want, their widths have to sum up to 12 in the end!
+```{r the app.R-file 3}
+# start coding the user interface with the fluid page design
+  ui <- shinyUI(
+  fluidPage(
+    
+# header panel with fluidRow-design    
+    fluidRow(
+    # dividing header panel in two columns      
+      # column one contains the title
+      column(width = 10, # width of first column 
+             style = "font-size: 25pt; line-height: 40pt; width = 100", # font size etc.
+                    tags$strong("Germanys air pollutants emissions")), # "tags" is for using html-functions within the shiny app
+      
+      # column two
+             column(width = 2,
+                    tags$head(tags$img(src='http://journocode.com/wordpress/wp-content/uploads/2016/01/small-logo.png', align = "left", width= "100"))) # add image from url
+    ),   
+```
+
+###The sidebar panel
+The sidebar panel is the part where the user can interact with the data, for example by picking categories. There are different select options like with checkboxes or select lists with a dropdown menu.
+```{r the app.R-file 4}
+ sidebarPanel(style = "background-color: #78d9c9;", # choose background color
+                 tags$style(type='text/css', # add css-style to the lists of selected categories and the dropdown menue  
+                            ".selectize-input { font-size: 12pt; line-height: 13pt;} 
+                            .selectize-dropdown { font-size: 12pt; line-height: 13pt; }"),
+                 width = 3, # set panel width
+                 
+                 # the air pollutants are to be selected by clicking checkboxes AND it should be possible to freely select different groups
+                 checkboxGroupInput("pollutants", # name of this input to access it later in the server part
+                                    label=HTML('<p style="color:white; font-size: 12pt"> Pollutants </p>'), # title of input menue with html style
+                                    choices=pollutantsorder, # adopt the choices to be displayed from our ordered "pollutantsorder"- vector
+                                    selected = pollutantsorder), # make all air pollutants to the default selected
+               
+                 # add second input menue for the years
+                 selectInput("year",
+                             label=HTML('<p style="color:white; font-size: 12pt"> Year </p>'), choices=unique(emissions_restructed$year), 
+                             multiple = TRUE, # make it possible to select more than one year
+                             selected = c(2005:2013)), # make all years to the default selected
+                 # add a help text, for example explaining how to use this select menues
+                 helpText(HTML('<p style="color:white; font-size: 9pt">choose air pollutants by clicking the check boxes, exclude years with a click and the backspace key</p>'))
+                 ),    
+```
+
+###The main panel
+The main panel is the stage for all the fancy things you code in the server part. Basically, we assign the outputs of the server code their space in the app. If you want to display more than one thing but don't want your user to scroll and scroll and scroll you may want to add some tabs he can switch to.  
+```{r the app.R-file 5}
+    mainPanel(
+      tabsetPanel(type = "tabs", 
+                          tabPanel("Graphic", # name as displayed on the tab
+                                   plotOutput("mplot"), # name of output you'll use in the server part 
+                                   style = "width:100%"), 
+                          tabPanel("Data", 
+                                   htmlOutput("text"), 
+                                   tableOutput("table"), 
+                                   style = "font-size:70%", htmlOutput("datasource")),
+                          # to include the markdown we only need this short line of code and the markdown file saved in the same directory as this script
+                          tabPanel("Code", 
+                                   includeMarkdown("emissions_app.Rmd"))
+    )
+    )
+                 ))     
+```
+That's it! The styling part is done.
+
+##server = well, server
+As said, the server part is where we code what is to be shown on the main panel and what should happen when the user interacts with the select panel. The whole server part is defined within the shinyServer() function that takes the input of the user as defined in the user interface and returns the output to it.
+
+###reactive data
+the most important part is to prepare the data to reactively change when the user changes the input. We enable that with the reactive() function.
+```{r the app.R-file 6}
+# start coding the server part
+server <- shinyServer(function(input, output) {
+  # reactive operations
+  data <- reactive({
+    
+    validate( # error message, if no input is selected, try it in the app by unchecking all the pollutants
+      need(input$pollutants != "", "Please select at least one air pollutant"),
+      need(input$year != "", "Please select at least one year")
+    )
+    # filter data for plot dependending on reactive data input with the filter()-function of dplyr
+    plotdata <- emissions_restructed  %>%
+      as.data.frame() %>%
+      # the content of "input$pollutants" changes whenever the user changes the input! 
+      filter(pollutants %in% input$pollutants & year %in% input$year) 
+    
+    # create dataset that contains "optimized" range of y-axis scales dependent on 
+    # reactive data input (ggplot2 does that by itself but in this case not as detailled 
+    # as we want it)
+    scalecalc <- plotdata %>%
+      group_by(year) %>%
+      summarize(value = sum(emissions))
+
+    # create dataset that contains "optimized" labelling maximum and steps of the y-axis    
+    scalemax <- max(scalecalc$value)
+    scalesteps <- round(scalemax/5, digits = -1) # steps of the labelling
+    
+    # important: make a list of the reactive results to be used for building the outputs
+    list(plotdata = plotdata,
+         scalemax = scalemax,
+         scalesteps = scalesteps
+    )
+  })     
+```
+Now the data will adapt to the input of the user. On this basis, we can code the different plots we stated in the main panel of the user interface.
+
+###plotOutput
+Copy our ggplot from the draft and paste it within the renderPlot() function. It's important to name the output output$mplot since we referred to it as plotOutput("mplot") in the main panel of the user interface.
+The only thing you need to change when it comes to the ggplot code is the data name and the information for the y-axis scale. Instead of plotting emissions_restructed, we now want to plot the reactive plotdata of the reactive dataset data(). Note the brand new brackets the data got because it's reactive!
+```{r the app.R-file 7}
+  # build the plot
+  output$mplot <- renderPlot({
+    # data = data()$plotdata!
+    myplot <- ggplot(data = data()$plotdata, aes(as.factor(year), y = emissions, 
+                     fill = factor(pollutants), order = pollutants)) + 
+      geom_bar(stat = "identity") + 
+      xlab("Year") +
+      ylab("Emissions in kt") +
+      theme_minimal()+
+      ggtitle("Barchart of air pollutants emissions\n") +
+      guides(fill=guide_legend(title="pollutants", reverse = T))+
+      scale_y_continuous(breaks=seq(0,data()$scalemax, data()$scalesteps),
+                         labels=abs(seq(0,data()$scalemax, data()$scalesteps))) + # !
+      theme(plot.title=element_text(family="Arial", face="bold", size=18),
+            axis.text.x = element_text(angle = 0, family="Arial", size=13), 
+            axis.text.y = element_text(angle = 0, family="Arial", size=13),
+            axis.title.x = element_text(size=14, face="bold", vjust = -1),
+            axis.title.y = element_text(size=14, face="bold", vjust = 2)
+      ) +
+      scale_fill_manual(values = c("TSP" = "#ffc7e4", "SO2" = "#ffb155", "PM 2.5" = "#ff6f69", "PM 10" = "#b1e6e6", 
+                                   "NOx" = "#77b1d5", "NMVOCs" = "#c0b7db", "NH3" = "#fcffaf", "CO" = "#78d9c9"), 
+                                   drop = F)
+    
+    print(myplot)
+  })
+```
+
+###table
+Here we can paste the table code of our draft script and simply add a filter() function to only display those parts of the data the user selected.
+```{r the app.R-file 8}
+  output$table <- renderTable({
+    emissions_restructed %>%
+      filter(pollutants %in% input$pollutants & year %in% input$year) %>% # !
+      spread(year, emissions) # to get the wide format 
+  })
+```
+
+html
+Now for the two text outputs. Both are made with the renderUI() function. The first only contains the source with a tagged link. According to the ui-part it will be displayed below the table output.
+```{r the app.R-file 9}
+  output$datasource <- renderUI({
+    tags$div(
+      tags$strong("Source:"), 
+      tags$a("Umweltbundesamt", href="http://www.umweltbundesamt.de/daten/luftbelastung/luftschadstoff-emissionen-in-deutschland")
+    )   
+  })     
+```
+The "text" output contains some additional informations on the data and is to be displayed above the table as established in the user interface. 
+```{r the app.R-file 10}
+  output$text <- renderUI({
+    tags$div(
+      HTML('<p style="color:black; font-size: 9pt">This data on Germanys air pollutants emissions was downloaded from the german
+           Federal Environment Agencys website. The table provides information on nitrogen oxides (NOx), ammonia (NH3), volatile 
+           organic compounds without methane (NMVOC), sulfur dioxide (SO2) and dust - including the fine dust fractions PM 10 and PM 2.5 
+           - and carbon monoxide (CO).</p>')
+    )   
+  })
+})      
+```
+
+shinyApp - the magic happens right here!
+Finally, merge the ui and the server part to form one awesome app! If you haven't saved the file as app.R in the same directory as the emissions data and the markdown file yet: Do it now! The Run button will become a Run App button and you can admire your product!
+```{r the app.R-file 11}
+shinyApp(ui = ui, server = server)    
+```
+Awesome, yet simple. If you create an acount at [shinyapps.io](http://www.shinyapps.io/), you can connect RStudio with it and publish your app right away on a shiny server. If you embed it the right way into your website ( and if it doesn't contain a not responsive, big image like my first app on my [blog](http://datentaeter.de/2016/03/11/meine-erste-app-mit-shiny/) ) your shiny app will be fully responsive. If you have a look at this tutorial with your phone, you'll see that shiny's responsive design isn't perfect yet.
+
+#If you coded your very first app with this tutorial or after reading this tutorial, let us know! We would love to see your work and creativity with the shiny application framework!
+
+#If you have any questions, problems or feedback, simply leave a comment, email us or join our slack team to talk to us any time!
